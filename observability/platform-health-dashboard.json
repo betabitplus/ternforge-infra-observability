@@ -50,36 +50,53 @@
       "type": "stat",
       "title": "Update critical state",
       "description": "Worst actionable state of update delivery only. Other platform signals are drill-down views, not a synthetic score.",
-      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "datasource": {"type": "datasource", "uid": "-- Mixed --"},
       "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
-      "targets": [{"refId": "A", "expr": "max((1 - last_over_time(ternforge_update_run_success{ternforge_trigger=\"release\"}[14d])) or (last_over_time(ternforge_fleet_expected_repositories{ternforge_trigger=\"\"}[48h]) != bool last_over_time(ternforge_fleet_observed_repositories{ternforge_trigger=\"\"}[48h])) or (1 - last_over_time(ternforge_fleet_token_scope_ok{ternforge_trigger=\"\"}[48h])) or ((time() - last_over_time(ternforge_update_last_success_unixtime[48h])) > bool 129600) or (last_over_time(ternforge_update_processing_duration_seconds{ternforge_trigger=\"release\"}[14d]) > bool 2700))", "instant": true}],
+      "timeFrom": "14d",
+      "targets": [
+        {"refId": "A", "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"}, "expr": "max((last_over_time(ternforge_fleet_expected_repositories[48h]) != bool last_over_time(ternforge_fleet_observed_repositories[48h])) or (1 - last_over_time(ternforge_fleet_token_scope_ok[48h])))", "instant": true, "hide": true},
+        {"refId": "B", "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"}, "queryType": "Workflow_Runs", "owner": "betabitplus", "repository": "ternforge-infra-updates", "options": {"workflow": "reconcile.yml", "branch": "main"}, "hide": true},
+        {"refId": "C", "datasource": {"type": "__expr__", "uid": "__expr__"}, "type": "sql", "expression": "WITH latest_release AS (SELECT conclusion, run_started_at, updated_at FROM B WHERE event = 'repository_dispatch' AND status = 'completed' ORDER BY created_at DESC LIMIT 1), workflow_state AS (SELECT COALESCE(MAX(CASE WHEN conclusion <> 'success' OR TIMESTAMPDIFF(SECOND, run_started_at, updated_at) > 2700 THEN 1 ELSE 0 END), 0) AS value FROM latest_release), freshness AS (SELECT CASE WHEN COALESCE(UNIX_TIMESTAMP() - MAX(CASE WHEN status = 'completed' AND conclusion = 'success' THEN UNIX_TIMESTAMP(updated_at) ELSE NULL END), 999999) > 129600 THEN 1 ELSE 0 END AS value FROM B) SELECT MAX(value) AS value FROM (SELECT __value__ AS value FROM A UNION ALL SELECT value FROM workflow_state UNION ALL SELECT value FROM freshness) states"}
+      ],
       "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "Healthy"}, "1": {"text": "Critical"}}}]}, "overrides": []}
     },
     {
       "id": 2,
       "type": "stat",
       "title": "Update delivery reliability",
-      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
       "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
-      "targets": [{"refId": "A", "expr": "last_over_time(ternforge_update_run_success{ternforge_trigger=\"release\"}[14d])", "instant": true}],
+      "timeFrom": "14d",
+      "targets": [
+        {"refId": "A", "queryType": "Workflow_Runs", "owner": "betabitplus", "repository": "ternforge-infra-updates", "options": {"workflow": "reconcile.yml", "branch": "main"}, "hide": true},
+        {"refId": "B", "datasource": {"type": "__expr__", "uid": "__expr__"}, "type": "sql", "expression": "SELECT CASE WHEN conclusion = 'success' THEN 1 ELSE 0 END AS value FROM A WHERE event = 'repository_dispatch' AND status = 'completed' ORDER BY created_at DESC LIMIT 1"}
+      ],
       "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "Failed"}, "1": {"text": "Success"}}}]}, "overrides": []}
     },
     {
       "id": 3,
       "type": "stat",
       "title": "Update delivery latency",
-      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
       "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
-      "targets": [{"refId": "A", "expr": "last_over_time(ternforge_update_processing_duration_seconds{ternforge_trigger=\"release\"}[14d])", "instant": true}],
+      "timeFrom": "14d",
+      "targets": [
+        {"refId": "A", "queryType": "Workflow_Runs", "owner": "betabitplus", "repository": "ternforge-infra-updates", "options": {"workflow": "reconcile.yml", "branch": "main"}, "hide": true},
+        {"refId": "B", "datasource": {"type": "__expr__", "uid": "__expr__"}, "type": "sql", "expression": "SELECT TIMESTAMPDIFF(SECOND, run_started_at, updated_at) AS value FROM A WHERE event = 'repository_dispatch' AND status = 'completed' ORDER BY created_at DESC LIMIT 1"}
+      ],
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
     },
     {
       "id": 4,
       "type": "stat",
       "title": "Update recovery freshness",
-      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
       "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
-      "targets": [{"refId": "A", "expr": "time() - last_over_time(ternforge_update_last_success_unixtime[48h])", "instant": true}],
+      "timeFrom": "48h",
+      "targets": [
+        {"refId": "A", "queryType": "Workflow_Runs", "owner": "betabitplus", "repository": "ternforge-infra-updates", "options": {"workflow": "reconcile.yml", "branch": "main"}, "hide": true},
+        {"refId": "B", "datasource": {"type": "__expr__", "uid": "__expr__"}, "type": "sql", "expression": "SELECT COALESCE(UNIX_TIMESTAMP() - MAX(CASE WHEN status = 'completed' AND conclusion = 'success' THEN UNIX_TIMESTAMP(updated_at) ELSE NULL END), 999999) AS value FROM A"}
+      ],
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
     },
     {
@@ -89,9 +106,9 @@
       "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
       "gridPos": {"h": 5, "w": 8, "x": 0, "y": 5},
       "targets": [
-        {"refId": "A", "expr": "last_over_time(ternforge_fleet_expected_repositories{ternforge_trigger=\"\"}[48h])", "instant": true, "legendFormat": "expected"},
-        {"refId": "B", "expr": "last_over_time(ternforge_fleet_observed_repositories{ternforge_trigger=\"\"}[48h])", "instant": true, "legendFormat": "observed"},
-        {"refId": "C", "expr": "last_over_time(ternforge_fleet_token_scope_ok{ternforge_trigger=\"\"}[48h])", "instant": true, "legendFormat": "token scope"}
+        {"refId": "A", "expr": "last_over_time(ternforge_fleet_expected_repositories[48h])", "instant": true, "legendFormat": "expected"},
+        {"refId": "B", "expr": "last_over_time(ternforge_fleet_observed_repositories[48h])", "instant": true, "legendFormat": "observed"},
+        {"refId": "C", "expr": "last_over_time(ternforge_fleet_token_scope_ok[48h])", "instant": true, "legendFormat": "token scope"}
       ]
     },
     {
@@ -107,7 +124,7 @@
       "id": 7,
       "type": "table",
       "title": "Selected repository: Renovate warnings",
-      "description": "On-demand warning drill-down for the selected repository; the actionable alert count is scoped to the exact managed fleet by the update producer.",
+      "description": "On-demand warning drill-down for the selected repository; the actionable alert uses the same fleet-scoped Grafana GitHub App instead of custom warning metrics.",
       "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
       "gridPos": {"h": 8, "w": 8, "x": 16, "y": 5},
       "targets": [{"refId": "A", "queryType": "Issues", "owner": "betabitplus", "repository": "$repository", "options": {"query": "is:open label:renovate/config-error", "timeField": 2}}]
