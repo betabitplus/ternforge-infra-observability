@@ -10,49 +10,18 @@ provider "grafana" {
 }
 
 locals {
-  alerts = {
-    update_run_failed = {
-      name      = "Ternforge central update workflow failed"
-      expr      = "1 - last_over_time(ternforge_update_run_success{ternforge_trigger=\"release\"}[14d])"
-      threshold = 0.5
-      summary   = "The latest release-triggered full-fleet reconciliation failed."
-    }
-    recovery_stale = {
-      name      = "Ternforge full-fleet recovery is stale"
-      expr      = "time() - last_over_time(ternforge_update_last_success_unixtime[48h])"
-      threshold = 129600
-      no_data   = "Alerting"
-      summary   = "No successful full-fleet reconciliation has been observed within 36 hours."
-    }
+  metric_alerts = {
     coverage_mismatch = {
       name      = "Ternforge fleet coverage mismatch"
-      expr      = "abs(last_over_time(ternforge_fleet_expected_repositories{ternforge_trigger=\"\"}[48h]) - last_over_time(ternforge_fleet_observed_repositories{ternforge_trigger=\"\"}[48h]))"
+      expr      = "abs(last_over_time(ternforge_fleet_expected_repositories[48h]) - last_over_time(ternforge_fleet_observed_repositories[48h]))"
       threshold = 0.5
       summary   = "Expected and observed managed repository counts differ."
     }
     token_scope_mismatch = {
       name      = "Ternforge Renovate token scope mismatch"
-      expr      = "1 - last_over_time(ternforge_fleet_token_scope_ok{ternforge_trigger=\"\"}[48h])"
+      expr      = "1 - last_over_time(ternforge_fleet_token_scope_ok[48h])"
       threshold = 0.5
       summary   = "The Renovate installation token repository set does not match the managed fleet."
-    }
-    processing_slow = {
-      name      = "Ternforge release processing exceeds ten minutes"
-      expr      = "last_over_time(ternforge_update_processing_duration_seconds{ternforge_trigger=\"release\"}[14d])"
-      threshold = 600
-      summary   = "A completed release-triggered reconciliation exceeded the reviewed ten-minute latency threshold."
-    }
-    token_boundary = {
-      name      = "Ternforge execution approaches token boundary"
-      expr      = "last_over_time(ternforge_update_processing_duration_seconds{ternforge_trigger=\"release\"}[14d])"
-      threshold = 2700
-      summary   = "A reconciliation reached 45 minutes and is approaching the one-hour installation-token lifetime."
-    }
-    renovate_configuration_warning = {
-      name      = "Ternforge Renovate configuration warning"
-      expr      = "last_over_time(ternforge_renovate_configuration_warnings[36h])"
-      threshold = 0.5
-      summary   = "At least one managed repository has an open Renovate configuration-warning issue."
     }
     grafana_capacity = {
       name           = "Ternforge Grafana metric capacity warning"
@@ -133,13 +102,13 @@ resource "grafana_rule_group" "fleet_health" {
   interval_seconds = 300
 
   dynamic "rule" {
-    for_each = local.alerts
+    for_each = local.metric_alerts
     content {
       uid            = "ternforge-${replace(rule.key, "_", "-")}"
       name           = rule.value.name
       condition      = "B"
       for            = "0s"
-      no_data_state  = try(rule.value.no_data, "OK")
+      no_data_state  = "OK"
       exec_err_state = "KeepLast"
       is_paused      = false
 
@@ -211,6 +180,162 @@ resource "grafana_rule_group" "fleet_health" {
       notification_settings {
         contact_point = grafana_contact_point.fleet_health.name
       }
+    }
+  }
+
+  rule {
+    uid            = "ternforge-update-run-failed"
+    name           = "Ternforge update delivery health"
+    condition      = "D"
+    for            = "0s"
+    no_data_state  = "Alerting"
+    exec_err_state = "KeepLast"
+    is_paused      = false
+
+    annotations = {
+      summary = "An update-delivery health signal is critical; inspect the signal label."
+    }
+
+    labels = {
+      service = "ternforge"
+      scope   = "platform-health"
+    }
+
+    data {
+      ref_id         = "A"
+      datasource_uid = grafana_data_source.github.uid
+
+      relative_time_range {
+        from = 1209600
+        to   = 0
+      }
+
+      model = jsonencode({
+        datasource = {
+          type = "grafana-github-datasource"
+          uid  = grafana_data_source.github.uid
+        }
+        owner      = "betabitplus"
+        repository = "ternforge-infra-updates"
+        queryType  = "Workflow_Runs"
+        options = {
+          workflow = "reconcile.yml"
+          branch   = "main"
+        }
+        refId = "A"
+      })
+    }
+
+    data {
+      ref_id         = "B"
+      datasource_uid = grafana_data_source.github.uid
+
+      relative_time_range {
+        from = 315360000
+        to   = 0
+      }
+
+      model = jsonencode({
+        datasource = {
+          type = "grafana-github-datasource"
+          uid  = grafana_data_source.github.uid
+        }
+        owner      = "betabitplus"
+        repository = ""
+        queryType  = "Issues"
+        options = {
+          query     = "is:open label:renovate/config-error"
+          timeField = 0
+        }
+        refId = "B"
+      })
+    }
+
+    data {
+      ref_id         = "C"
+      datasource_uid = "__expr__"
+
+      relative_time_range {
+        from = 1209600
+        to   = 0
+      }
+
+      model = jsonencode({
+        datasource = {
+          type = "__expr__"
+          uid  = "__expr__"
+        }
+        expression    = <<-SQL
+          WITH latest_release AS (
+            SELECT conclusion, run_started_at, updated_at
+            FROM A
+            WHERE event = 'repository_dispatch' AND status = 'completed'
+            ORDER BY created_at DESC
+            LIMIT 1
+          ), release_state AS (
+            SELECT
+              COALESCE(MAX(CASE WHEN conclusion <> 'success' THEN 1 ELSE 0 END), 0) AS failed,
+              COALESCE(MAX(CASE WHEN TIMESTAMPDIFF(SECOND, run_started_at, updated_at) > 600 THEN 1 ELSE 0 END), 0) AS slow,
+              COALESCE(MAX(CASE WHEN TIMESTAMPDIFF(SECOND, run_started_at, updated_at) > 2700 THEN 1 ELSE 0 END), 0) AS token_boundary
+            FROM latest_release
+          ), freshness AS (
+            SELECT CASE WHEN COALESCE(
+              UNIX_TIMESTAMP() - MAX(CASE WHEN status = 'completed' AND conclusion = 'success' THEN UNIX_TIMESTAMP(updated_at) ELSE NULL END),
+              999999
+            ) > 129600 THEN 1 ELSE 0 END AS stale
+            FROM A
+          ), warnings AS (
+            SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END AS warning
+            FROM B
+          )
+          SELECT 'release-run-failed' AS signal, failed AS value FROM release_state
+          UNION ALL SELECT 'recovery-stale', stale FROM freshness
+          UNION ALL SELECT 'processing-over-10m', slow FROM release_state
+          UNION ALL SELECT 'token-boundary', token_boundary FROM release_state
+          UNION ALL SELECT 'renovate-config-warning', warning FROM warnings
+        SQL
+        format        = "alerting"
+        intervalMs    = 1000
+        maxDataPoints = 43200
+        refId         = "C"
+        type          = "sql"
+      })
+    }
+
+    data {
+      ref_id         = "D"
+      datasource_uid = "-100"
+
+      relative_time_range {
+        from = 0
+        to   = 0
+      }
+
+      model = jsonencode({
+        conditions = [{
+          evaluator = {
+            params = [0.5]
+            type   = "gt"
+          }
+          operator = { type = "and" }
+          query    = { params = ["D"] }
+          reducer  = { params = [], type = "last" }
+          type     = "query"
+        }]
+        datasource = {
+          type = "__expr__"
+          uid  = "-100"
+        }
+        expression    = "C"
+        intervalMs    = 1000
+        maxDataPoints = 43200
+        refId         = "D"
+        type          = "threshold"
+      })
+    }
+
+    notification_settings {
+      contact_point = grafana_contact_point.fleet_health.name
     }
   }
 }
