@@ -15,7 +15,7 @@ env:
 
 jobs:
   prove:
-    name: prove current-run readback with existing credential
+    name: prove recoverable run-status readback
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -45,12 +45,25 @@ jobs:
             -service-account-email="$SCALR_SA_EMAIL" \
             -lifetime=600
 
-      - name: Compare run history and current queue
+      - name: Probe run status filters
         run: |
           set -euo pipefail
-          scalr -format=json get-runs -filter-workspace="$SCALR_WORKSPACE_ID" > history.json
-          printf 'history_count=%s\n' "$(jq 'length' history.json)"
-          scalr -format=json get-runs-queue -filter-workspace="$SCALR_WORKSPACE_ID" > queue.json
-          printf 'queue_count=%s\n' "$(jq 'length' queue.json)"
-          jq -e 'length == 0' queue.json >/dev/null
-          rm -f history.json queue.json
+          scalr -format=json get-runs \
+            -filter-workspace="$SCALR_WORKSPACE_ID" \
+            -filter-status=pending > pending.json
+          printf 'pending_count=%s\n' "$(jq 'length' pending.json)"
+          jq -e 'length == 0' pending.json >/dev/null
+
+          set +e
+          scalr -format=json get-runs \
+            -filter-workspace="$SCALR_WORKSPACE_ID" \
+            -filter-status='in:pending,planning,applying' > multi.json 2> multi.err
+          multi_rc=$?
+          set -e
+          printf 'multi_status_rc=%s\n' "$multi_rc"
+          cat multi.err
+          if test "$multi_rc" -eq 0; then
+            printf 'multi_status_count=%s\n' "$(jq 'length' multi.json)"
+            jq -e 'length == 0' multi.json >/dev/null
+          fi
+          rm -f pending.json multi.json multi.err
