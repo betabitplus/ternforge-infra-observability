@@ -106,10 +106,11 @@
     {
       "id": 7,
       "type": "table",
-      "title": "Configuration: Renovate warnings",
+      "title": "Selected repository: Renovate warnings",
+      "description": "On-demand warning drill-down for the selected repository; the actionable alert count is scoped to the exact managed fleet by the update producer.",
       "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
       "gridPos": {"h": 8, "w": 8, "x": 16, "y": 5},
-      "targets": [{"refId": "A", "queryType": "Issues", "owner": "betabitplus", "repository": "", "options": {"query": "is:open label:renovate/config-error", "timeField": 2}}]
+      "targets": [{"refId": "A", "queryType": "Issues", "owner": "betabitplus", "repository": "$repository", "options": {"query": "is:open label:renovate/config-error", "timeField": 2}}]
     },
     {
       "id": 8,
