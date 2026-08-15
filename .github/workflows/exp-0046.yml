@@ -1,0 +1,166 @@
+name: EXP-0046 Grafana query canary
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GRAFANA_URL: https://${{ vars.TERNFORGE_GRAFANA_STACK_SLUG }}.grafana.net
+
+jobs:
+  query:
+    name: read-only Grafana query canary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: observability
+    steps:
+      - name: Verify GitHub datasource and SQL expressions
+        env:
+          GRAFANA_AUTH: ${{ secrets.TERNFORGE_GRAFANA_AUTH }}
+        run: |
+          set -euo pipefail
+
+          query() {
+            local name="$1" request="$2" response status
+            response="$RUNNER_TEMP/${name}.json"
+            status="$(curl -sS -o "$response" -w '%{http_code}' \
+              -H "Authorization: Bearer ${GRAFANA_AUTH}" \
+              -H 'Content-Type: application/json' \
+              --data-binary "@$request" \
+              "${GRAFANA_URL}/api/ds/query")"
+            printf '%s: HTTP %s\n' "$name" "$status"
+            if test "$status" != 200; then
+              jq -c '{message, error, results: (.results // {} | with_entries(.value |= {status, error, errorSource}))}' "$response" || true
+              return 1
+            fi
+            jq -e '.results | type == "object"' "$response" >/dev/null
+          }
+
+          jq -n '{
+            from: "now-14d",
+            to: "now",
+            queries: [{
+              refId: "A",
+              datasource: {type: "grafana-github-datasource", uid: "ternforge-github"},
+              owner: "betabitplus",
+              repository: "ternforge-infra-updates",
+              queryType: "Workflow_Runs",
+              options: {workflow: "reconcile.yml", branch: "main"}
+            }]
+          }' > "$RUNNER_TEMP/workflow-runs-request.json"
+          query workflow-runs "$RUNNER_TEMP/workflow-runs-request.json"
+          jq -e '.results.A.frames | length > 0' "$RUNNER_TEMP/workflow-runs.json" >/dev/null
+          jq -c '.results.A.frames[0].schema.fields | map(.name)' "$RUNNER_TEMP/workflow-runs.json"
+
+          jq -n '{
+            from: "now-10y",
+            to: "now",
+            queries: [{
+              refId: "A",
+              datasource: {type: "grafana-github-datasource", uid: "ternforge-github"},
+              owner: "betabitplus",
+              repository: "",
+              queryType: "Issues",
+              options: {query: "is:open label:renovate/config-error", timeField: 0}
+            }]
+          }' > "$RUNNER_TEMP/issues-request.json"
+          query issues "$RUNNER_TEMP/issues-request.json"
+
+          jq -n '{
+            from: "now-14d",
+            to: "now",
+            queries: [
+              {
+                refId: "A",
+                datasource: {type: "grafana-github-datasource", uid: "ternforge-github"},
+                owner: "betabitplus",
+                repository: "ternforge-infra-updates",
+                queryType: "Workflow_Runs",
+                options: {workflow: "reconcile.yml", branch: "main"}
+              },
+              {
+                refId: "B",
+                datasource: {type: "__expr__", uid: "__expr__"},
+                type: "sql",
+                expression: "SELECT conclusion FROM A LIMIT 1"
+              }
+            ]
+          }' > "$RUNNER_TEMP/simple-sql-request.json"
+          query simple-sql "$RUNNER_TEMP/simple-sql-request.json"
+          jq -e '.results.B.frames | length == 1' "$RUNNER_TEMP/simple-sql.json" >/dev/null
+
+          update_sql="$(cat <<'SQL'
+          WITH latest_release AS (
+            SELECT conclusion, run_started_at, updated_at
+            FROM A
+            WHERE event = 'repository_dispatch' AND status = 'completed'
+            ORDER BY created_at DESC
+            LIMIT 1
+          ), release_state AS (
+            SELECT
+              COALESCE(MAX(CASE WHEN conclusion <> 'success' THEN 1 ELSE 0 END), 0) AS failed,
+              COALESCE(MAX(CASE WHEN TIMESTAMPDIFF(SECOND, run_started_at, updated_at) > 600 THEN 1 ELSE 0 END), 0) AS slow,
+              COALESCE(MAX(CASE WHEN TIMESTAMPDIFF(SECOND, run_started_at, updated_at) > 2700 THEN 1 ELSE 0 END), 0) AS token_boundary
+            FROM latest_release
+          ), freshness AS (
+            SELECT CASE WHEN COALESCE(
+              UNIX_TIMESTAMP() - MAX(CASE WHEN status = 'completed' AND conclusion = 'success' THEN UNIX_TIMESTAMP(updated_at) ELSE NULL END),
+              999999
+            ) > 129600 THEN 1 ELSE 0 END AS stale
+            FROM A
+          ), warnings AS (
+            SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END AS warning
+            FROM B
+          )
+          SELECT 'release-run-failed' AS signal, failed AS value FROM release_state
+          UNION ALL SELECT 'recovery-stale', stale FROM freshness
+          UNION ALL SELECT 'processing-over-10m', slow FROM release_state
+          UNION ALL SELECT 'token-boundary', token_boundary FROM release_state
+          UNION ALL SELECT 'renovate-config-warning', warning FROM warnings
+          SQL
+          )"
+
+          jq -n --arg sql "$update_sql" '{
+            from: "now-14d",
+            to: "now",
+            queries: [
+              {
+                refId: "A",
+                datasource: {type: "grafana-github-datasource", uid: "ternforge-github"},
+                owner: "betabitplus",
+                repository: "ternforge-infra-updates",
+                queryType: "Workflow_Runs",
+                options: {workflow: "reconcile.yml", branch: "main"}
+              },
+              {
+                refId: "B",
+                datasource: {type: "grafana-github-datasource", uid: "ternforge-github"},
+                owner: "betabitplus",
+                repository: "",
+                queryType: "Issues",
+                options: {query: "is:open label:renovate/config-error", timeField: 0}
+              },
+              {
+                refId: "C",
+                datasource: {type: "__expr__", uid: "__expr__"},
+                type: "sql",
+                expression: $sql
+              }
+            ]
+          }' > "$RUNNER_TEMP/update-health-request.json"
+          query update-health "$RUNNER_TEMP/update-health-request.json"
+          jq -e '
+            (.results.C.frames | length) == 1 and
+            (.results.C.frames[0].schema.fields | map(.name)) == ["signal", "value"] and
+            (.results.C.frames[0].data.values[0] | sort) == [
+              "processing-over-10m",
+              "recovery-stale",
+              "release-run-failed",
+              "renovate-config-warning",
+              "token-boundary"
+            ] and
+            (.results.C.frames[0].data.values[1] | all(type == "number"))
+          ' "$RUNNER_TEMP/update-health.json" >/dev/null
+          jq -c '.results.C.frames[0].data.values' "$RUNNER_TEMP/update-health.json"
