@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  required:
+    name: ci / required
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Validate pull request title
+        if: github.event_name == 'pull_request'
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            build
+            chore
+            ci
+            docs
+            feat
+            fix
+            perf
+            refactor
+            revert
+            test
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pinned OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version_file: grafana/.opentofu-version
+          tofu_wrapper: false
+
+      - name: Validate workflows with actionlint
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+
+      - name: Validate Grafana OpenTofu
+        working-directory: grafana
+        run: |
+          set -euo pipefail
+          tofu fmt -check -recursive
+          tofu init -backend=false -input=false -lockfile=readonly
+          tofu validate
+
+      - name: Verify repository files
+        run: |
+          set -euo pipefail
+          git diff --check
+          python -m json.tool observability/platform-health-dashboard.json >/dev/null
+          test -s .copier-answers.yml
+          test -s grafana/.terraform.lock.hcl

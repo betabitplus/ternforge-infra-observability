@@ -1,0 +1,183 @@
+{
+  "uid": "ternforge-fleet-health",
+  "title": "Ternforge Platform Health",
+  "tags": ["ternforge", "platform-health"],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "refresh": "5m",
+  "time": {"from": "now-7d", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "current": {"selected": true, "text": "ternforge-infra-updates", "value": "ternforge-infra-updates"},
+        "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
+        "definition": "Ternforge managed repositories",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Repository",
+        "multi": false,
+        "name": "repository",
+        "options": [],
+        "query": {"field": "name", "owner": "betabitplus", "queryType": "Repositories", "repository": ""},
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {"selected": true, "text": "reconcile.yml", "value": "reconcile.yml"},
+        "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
+        "definition": "Workflows in selected repository",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Workflow",
+        "multi": false,
+        "name": "workflow",
+        "options": [],
+        "query": {"field": "path", "owner": "betabitplus", "queryType": "Workflows", "repository": "$repository", "options": {"timeField": 0}},
+        "refresh": 1,
+        "regex": "/.*\\/([^/]+\\.ya?ml)$/",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Update critical state",
+      "description": "Worst actionable state of update delivery only. Other platform signals are drill-down views, not a synthetic score.",
+      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+      "targets": [{"refId": "A", "expr": "max((1 - last_over_time(ternforge_update_run_success{ternforge_trigger=\"release\"}[14d])) or (last_over_time(ternforge_fleet_expected_repositories{ternforge_trigger=\"release\"}[14d]) != bool last_over_time(ternforge_fleet_observed_repositories{ternforge_trigger=\"release\"}[14d])) or (1 - last_over_time(ternforge_fleet_token_scope_ok{ternforge_trigger=\"release\"}[14d])) or ((time() - last_over_time(ternforge_update_last_success_unixtime[48h])) > bool 129600) or (last_over_time(ternforge_update_processing_duration_seconds{ternforge_trigger=\"release\"}[14d]) > bool 2700))", "instant": true}],
+      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "Healthy"}, "1": {"text": "Critical"}}}]}, "overrides": []}
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Update delivery reliability",
+      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+      "targets": [{"refId": "A", "expr": "last_over_time(ternforge_update_run_success{ternforge_trigger=\"release\"}[14d])", "instant": true}],
+      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "Failed"}, "1": {"text": "Success"}}}]}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Update delivery latency",
+      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+      "targets": [{"refId": "A", "expr": "last_over_time(ternforge_update_processing_duration_seconds{ternforge_trigger=\"release\"}[14d])", "instant": true}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Update recovery freshness",
+      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
+      "targets": [{"refId": "A", "expr": "time() - last_over_time(ternforge_update_last_success_unixtime[48h])", "instant": true}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Update fleet coverage",
+      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 5},
+      "targets": [
+        {"refId": "A", "expr": "last_over_time(ternforge_fleet_expected_repositories{ternforge_trigger=\"release\"}[14d])", "instant": true, "legendFormat": "expected"},
+        {"refId": "B", "expr": "last_over_time(ternforge_fleet_observed_repositories{ternforge_trigger=\"release\"}[14d])", "instant": true, "legendFormat": "observed"},
+        {"refId": "C", "expr": "last_over_time(ternforge_fleet_token_scope_ok{ternforge_trigger=\"release\"}[14d])", "instant": true, "legendFormat": "token scope"}
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Maintenance: open Renovate PRs",
+      "description": "Review backlog only; age is operational context, not an alert by itself.",
+      "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 5},
+      "targets": [{"refId": "A", "queryType": "Pull_Requests", "owner": "betabitplus", "repository": "", "options": {"query": "is:open author:app/renovate", "timeField": 4}}]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Configuration: Renovate warnings",
+      "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 5},
+      "targets": [{"refId": "A", "queryType": "Issues", "owner": "betabitplus", "repository": "", "options": {"query": "is:open label:renovate/config-error", "timeField": 2}}]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Repository control runs",
+      "description": "Current control-plane execution evidence. Periodic privileged drift scanning is intentionally not added.",
+      "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 13},
+      "targets": [{"refId": "A", "queryType": "Workflow_Runs", "owner": "betabitplus", "repository": "ternforge-infra-repository-control", "options": {"workflow": "apply.yml", "branch": "main"}}]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Full-fleet update runs",
+      "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 13},
+      "targets": [{"refId": "A", "queryType": "Workflow_Runs", "owner": "betabitplus", "repository": "ternforge-infra-updates", "options": {"workflow": "reconcile.yml", "branch": "main"}}]
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Selected workflow usage and cost",
+      "description": "On-demand CI/release/control health for the selected managed repository and workflow: runs, success/failure, durations, p95 and approximate Actions cost without custom metric ingestion.",
+      "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 20},
+      "targets": [{"refId": "A", "queryType": "Workflow_Usage", "owner": "betabitplus", "repository": "$repository", "options": {"workflow": "$workflow"}}]
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Selected workflow runs",
+      "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 20},
+      "targets": [{"refId": "A", "queryType": "Workflow_Runs", "owner": "betabitplus", "repository": "$repository", "options": {"workflow": "$workflow"}}]
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Selected repository releases",
+      "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 27},
+      "targets": [{"refId": "A", "queryType": "Releases", "owner": "betabitplus", "repository": "$repository", "options": {}}]
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Grafana active OTLP series",
+      "description": "Primary metrics-capacity signal. Platform-wide GitHub views do not add OTLP series.",
+      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 27},
+      "targets": [{"refId": "A", "expr": "grafanacloud_instance_active_otlp_series", "instant": true}]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Grafana actual DPM",
+      "description": "Current samples per second converted to data points per minute.",
+      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 27},
+      "targets": [{"refId": "A", "expr": "60 * grafanacloud_instance_samples_per_second", "instant": true}]
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Grafana included DPM / series",
+      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 27},
+      "targets": [{"refId": "A", "expr": "grafanacloud_org_metrics_included_dpm_per_series", "instant": true}]
+    }
+  ]
+}

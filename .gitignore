@@ -3,3 +3,11 @@
 .vscode/
 *.swp
 *.tmp
+
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.plan
+crash.log
+crash.*.log
