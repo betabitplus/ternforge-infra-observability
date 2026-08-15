@@ -26,13 +26,13 @@ locals {
     }
     coverage_mismatch = {
       name      = "Ternforge fleet coverage mismatch"
-      expr      = "abs(last_over_time(ternforge_fleet_expected_repositories{ternforge_trigger=\"release\"}[14d]) - last_over_time(ternforge_fleet_observed_repositories{ternforge_trigger=\"release\"}[14d]))"
+      expr      = "abs(last_over_time(ternforge_fleet_expected_repositories{ternforge_trigger=\"\"}[48h]) - last_over_time(ternforge_fleet_observed_repositories{ternforge_trigger=\"\"}[48h]))"
       threshold = 0.5
       summary   = "Expected and observed managed repository counts differ."
     }
     token_scope_mismatch = {
       name      = "Ternforge Renovate token scope mismatch"
-      expr      = "1 - last_over_time(ternforge_fleet_token_scope_ok{ternforge_trigger=\"release\"}[14d])"
+      expr      = "1 - last_over_time(ternforge_fleet_token_scope_ok{ternforge_trigger=\"\"}[48h])"
       threshold = 0.5
       summary   = "The Renovate installation token repository set does not match the managed fleet."
     }
