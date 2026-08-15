@@ -1,0 +1,5 @@
+# This file is managed by Copier.
+_commit: v1.2.3
+_src_path: https://github.com/betabitplus/ternforge-template-infra-repository.git
+repository_description: Ternforge platform health observability and Grafana configuration.
+repository_name: ternforge-infra-observability
