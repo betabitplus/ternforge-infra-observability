@@ -156,26 +156,26 @@
     {
       "id": 13,
       "type": "stat",
-      "title": "Grafana active OTLP series",
-      "description": "Primary metrics-capacity signal. Platform-wide GitHub views do not add OTLP series.",
-      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "title": "Grafana active series",
+      "description": "Primary metrics-capacity signal. Platform-wide GitHub views do not add custom metric series.",
+      "datasource": {"type": "prometheus", "uid": "grafanacloud-usage"},
       "gridPos": {"h": 4, "w": 4, "x": 12, "y": 27},
-      "targets": [{"refId": "A", "expr": "grafanacloud_instance_active_otlp_series", "instant": true}]
+      "targets": [{"refId": "A", "expr": "grafanacloud_instance_active_series", "instant": true}]
     },
     {
       "id": 14,
       "type": "stat",
-      "title": "Grafana actual DPM",
-      "description": "Current samples per second converted to data points per minute.",
-      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "title": "Grafana 24h average DPM",
+      "description": "Average metrics ingestion rate over 24 hours, converted from samples per second to data points per minute.",
+      "datasource": {"type": "prometheus", "uid": "grafanacloud-usage"},
       "gridPos": {"h": 4, "w": 4, "x": 16, "y": 27},
-      "targets": [{"refId": "A", "expr": "60 * grafanacloud_instance_samples_per_second", "instant": true}]
+      "targets": [{"refId": "A", "expr": "60 * avg_over_time(grafanacloud_instance_samples_per_second[24h])", "instant": true}]
     },
     {
       "id": 15,
       "type": "stat",
       "title": "Grafana included DPM / series",
-      "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+      "datasource": {"type": "prometheus", "uid": "grafanacloud-usage"},
       "gridPos": {"h": 4, "w": 4, "x": 20, "y": 27},
       "targets": [{"refId": "A", "expr": "grafanacloud_org_metrics_included_dpm_per_series", "instant": true}]
     }

@@ -55,10 +55,11 @@ locals {
       summary   = "At least one managed repository has an open Renovate configuration-warning issue."
     }
     grafana_capacity = {
-      name      = "Ternforge Grafana metric capacity warning"
-      expr      = "100 * grafanacloud_instance_active_otlp_series / ${var.metric_series_allowance}"
-      threshold = 80
-      summary   = "Grafana Cloud active OTLP series reached 80 percent of the reviewed metric-series allowance."
+      name           = "Ternforge Grafana metric capacity warning"
+      expr           = "100 * grafanacloud_instance_active_series / ${var.metric_series_allowance}"
+      threshold      = 80
+      datasource_uid = "grafanacloud-usage"
+      summary        = "Grafana Cloud active series reached 80 percent of the reviewed metric-series allowance."
     }
   }
 }
@@ -153,7 +154,7 @@ resource "grafana_rule_group" "fleet_health" {
 
       data {
         ref_id         = "A"
-        datasource_uid = "grafanacloud-prom"
+        datasource_uid = try(rule.value.datasource_uid, "grafanacloud-prom")
 
         relative_time_range {
           from = 600
@@ -163,7 +164,7 @@ resource "grafana_rule_group" "fleet_health" {
         model = jsonencode({
           datasource = {
             type = "prometheus"
-            uid  = "grafanacloud-prom"
+            uid  = try(rule.value.datasource_uid, "grafanacloud-prom")
           }
           editorMode    = "code"
           expr          = rule.value.expr
