@@ -15,7 +15,7 @@ env:
 
 jobs:
   prove:
-    name: prove recoverable run-status readback
+    name: prove fail-closed nonterminal run filter
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -45,25 +45,13 @@ jobs:
             -service-account-email="$SCALR_SA_EMAIL" \
             -lifetime=600
 
-      - name: Probe run status filters
+      - name: Probe fail-closed nonterminal filter
         run: |
           set -euo pipefail
           scalr -format=json get-runs \
             -filter-workspace="$SCALR_WORKSPACE_ID" \
-            -filter-status=pending > pending.json
-          printf 'pending_count=%s\n' "$(jq 'length' pending.json)"
-          jq -e 'length == 0' pending.json >/dev/null
-
-          set +e
-          scalr -format=json get-runs \
-            -filter-workspace="$SCALR_WORKSPACE_ID" \
-            -filter-status='in:pending,planning,applying' > multi.json 2> multi.err
-          multi_rc=$?
-          set -e
-          printf 'multi_status_rc=%s\n' "$multi_rc"
-          cat multi.err
-          if test "$multi_rc" -eq 0; then
-            printf 'multi_status_count=%s\n' "$(jq 'length' multi.json)"
-            jq -e 'length == 0' multi.json >/dev/null
-          fi
-          rm -f pending.json multi.json multi.err
+            -filter-status='notin:discarded,planned_and_finished,applied,post_apply_finished,errored,canceled' \
+            > active.json
+          printf 'nonterminal_count=%s\n' "$(jq 'length' active.json)"
+          jq -e 'length == 0' active.json >/dev/null
+          rm -f active.json
