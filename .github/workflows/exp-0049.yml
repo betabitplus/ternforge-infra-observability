@@ -1,0 +1,76 @@
+name: EXP-0049 Scalr credential file guard
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  SCALR_HOSTNAME: betabitplus-ternforge.scalr.io
+  SCALR_SA_EMAIL: ternforge-fleet-health-github@betabitplus-ternforge.scalr.io
+  SCALR_CLI_VERSION: 0.18.0
+
+jobs:
+  prove:
+    name: prove OpenTofu owns the credential-file failure boundary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: observability
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version_file: grafana/.opentofu-version
+          tofu_wrapper: false
+
+      - name: Install pinned Scalr CLI
+        run: |
+          set -euo pipefail
+          base="https://github.com/Scalr/scalr-cli/releases/download/v${SCALR_CLI_VERSION}"
+          archive="scalr-cli_${SCALR_CLI_VERSION}_linux_amd64.zip"
+          curl -fsSLO "${base}/${archive}"
+          curl -fsSLO "${base}/scalr-cli_${SCALR_CLI_VERSION}_SHA256SUMS"
+          grep " ${archive}$" "scalr-cli_${SCALR_CLI_VERSION}_SHA256SUMS" | sha256sum --check --strict
+          unzip -q "$archive"
+          sudo install -m 0755 scalr /usr/local/bin/scalr
+          rm -f "$archive" "scalr-cli_${SCALR_CLI_VERSION}_SHA256SUMS" scalr
+
+      - name: Exchange OIDC and prove actual consumer failure boundary
+        working-directory: grafana
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=betabitplus")"
+          oidc="$(jq -er '.value' <<<"$response")"
+          echo "::add-mask::$oidc"
+          scalr -quiet assume-service-account \
+            -id-token="$oidc" \
+            -service-account-email="$SCALR_SA_EMAIL" \
+            -lifetime=600
+
+          credential="$HOME/.terraform.d/credentials.tfrc.json"
+          backup="$RUNNER_TEMP/credentials.tfrc.json"
+          cp "$credential" "$backup"
+
+          rm -rf .terraform
+          tofu init -input=false -lockfile=readonly
+
+          rm -f "$credential"
+          rm -rf .terraform
+          set +e
+          tofu init -input=false -lockfile=readonly > "$RUNNER_TEMP/init-without-credential.log" 2>&1
+          missing_rc=$?
+          set -e
+          cat "$RUNNER_TEMP/init-without-credential.log"
+          test "$missing_rc" -ne 0
+
+          install -m 0600 "$backup" "$credential"
+          rm -rf .terraform
+          tofu init -input=false -lockfile=readonly
