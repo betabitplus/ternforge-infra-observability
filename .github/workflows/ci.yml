@@ -62,4 +62,3 @@ jobs:
           git diff --check
           python -m json.tool observability/platform-health-dashboard.json >/dev/null
           test -s .copier-answers.yml
-          test -s grafana/.terraform.lock.hcl

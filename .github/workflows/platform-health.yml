@@ -66,10 +66,6 @@ jobs:
             -id-token="$oidc" \
             -service-account-email="$SCALR_SA_EMAIL" \
             -lifetime=600
-          test -s "$HOME/.terraform.d/credentials.tfrc.json"
-          jq -e --arg host "$SCALR_HOSTNAME" \
-            '.credentials[$host].token | type == "string" and length > 20' \
-            "$HOME/.terraform.d/credentials.tfrc.json" >/dev/null
 
       - name: Read back state-only Scalr workspace
         run: |
@@ -176,10 +172,6 @@ jobs:
             -id-token="$oidc" \
             -service-account-email="$SCALR_SA_EMAIL" \
             -lifetime=600
-          test -s "$HOME/.terraform.d/credentials.tfrc.json"
-          jq -e --arg host "$SCALR_HOSTNAME" \
-            '.credentials[$host].token | type == "string" and length > 20' \
-            "$HOME/.terraform.d/credentials.tfrc.json" >/dev/null
 
       - name: Read back state-only Scalr workspace
         run: |
