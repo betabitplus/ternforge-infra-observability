@@ -113,7 +113,7 @@ resource "grafana_dashboard" "fleet_health" {
 resource "grafana_contact_point" "fleet_health" {
   provider = grafana.stack
 
-  name = "Ternforge Platform Health"
+  name = "Ternforge Fleet Health"
 
   email {
     addresses               = [var.alert_email]
@@ -127,7 +127,7 @@ resource "grafana_contact_point" "fleet_health" {
 resource "grafana_rule_group" "fleet_health" {
   provider = grafana.stack
 
-  name             = "ternforge-platform-health"
+  name             = "ternforge-fleet-health"
   folder_uid       = grafana_folder.fleet_health.uid
   interval_seconds = 300
 
