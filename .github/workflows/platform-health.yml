@@ -1,0 +1,283 @@
+name: platform health grafana
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: platform-health-grafana
+  cancel-in-progress: false
+
+env:
+  SCALR_HOSTNAME: betabitplus-ternforge.scalr.io
+  SCALR_SA_EMAIL: ternforge-fleet-health-github@betabitplus-ternforge.scalr.io
+  # renovate: datasource=github-releases depName=Scalr/scalr-cli versioning=semver extractVersion=^v(?<version>.*)$
+  SCALR_CLI_VERSION: 0.18.0
+  SCALR_WORKSPACE_ID: ws-v0pc9tb78frfm28ls
+  TF_VAR_grafana_stack_slug: ${{ vars.TERNFORGE_GRAFANA_STACK_SLUG }}
+  TF_VAR_github_app_id: ${{ vars.TERNFORGE_GRAFANA_GITHUB_APP_ID }}
+  TF_VAR_github_app_installation_id: ${{ vars.TERNFORGE_GRAFANA_GITHUB_INSTALLATION_ID }}
+
+jobs:
+  plan:
+    name: platform health grafana / plan
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: observability
+    outputs:
+      plan_digest: ${{ steps.plan.outputs.digest }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version_file: grafana/.opentofu-version
+          tofu_wrapper: false
+
+      - name: Install pinned Scalr CLI
+        run: |
+          set -euo pipefail
+          base="https://github.com/Scalr/scalr-cli/releases/download/v${SCALR_CLI_VERSION}"
+          archive="scalr-cli_${SCALR_CLI_VERSION}_linux_amd64.zip"
+          curl -fsSLO "${base}/${archive}"
+          curl -fsSLO "${base}/scalr-cli_${SCALR_CLI_VERSION}_SHA256SUMS"
+          grep " ${archive}$" "scalr-cli_${SCALR_CLI_VERSION}_SHA256SUMS" | sha256sum --check --strict
+          unzip -q "$archive"
+          sudo install -m 0755 scalr /usr/local/bin/scalr
+          scalr -version
+          rm -f "$archive" "scalr-cli_${SCALR_CLI_VERSION}_SHA256SUMS" scalr
+
+      - name: Exchange GitHub OIDC for a 600-second Scalr credential
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=betabitplus")"
+          oidc="$(jq -er '.value' <<<"$response")"
+          echo "::add-mask::$oidc"
+          scalr -quiet assume-service-account \
+            -id-token="$oidc" \
+            -service-account-email="$SCALR_SA_EMAIL" \
+            -lifetime=600
+          test -s "$HOME/.terraform.d/credentials.tfrc.json"
+          jq -e --arg host "$SCALR_HOSTNAME" \
+            '.credentials[$host].token | type == "string" and length > 20' \
+            "$HOME/.terraform.d/credentials.tfrc.json" >/dev/null
+
+      - name: Read back state-only Scalr workspace
+        run: |
+          set -euo pipefail
+          scalr -format=json get-workspace -workspace="$SCALR_WORKSPACE_ID" > workspace.json
+          jq '{
+            execution_mode: ."execution-mode",
+            operations,
+            remote_backend: ."remote-backend",
+            iac_platform: ."iac-platform",
+            terraform_version: ."terraform-version",
+            vcs_repo: ."vcs-repo"
+          }' workspace.json
+          jq -e '
+            ."execution-mode" == "local" and
+            .operations == false and
+            ."remote-backend" == true and
+            ."iac-platform" == "opentofu" and
+            (."vcs-repo" == null or ."vcs-repo" == {})
+          ' workspace.json >/dev/null
+          scalr -format=json get-runs -filter-workspace="$SCALR_WORKSPACE_ID" > runs.json
+          jq -e 'length == 0' runs.json >/dev/null
+          scalr -format=json get-variables -filter-workspace="$SCALR_WORKSPACE_ID" > variables.json
+          jq -e 'length == 0' variables.json >/dev/null
+          scalr -format=json list-provider-configuration-links -workspace="$SCALR_WORKSPACE_ID" > provider-links.json
+          jq -e 'length == 0' provider-links.json >/dev/null
+          rm -f workspace.json runs.json variables.json provider-links.json
+
+      - name: Initialize Grafana remote state
+        working-directory: grafana
+        run: |
+          set -euo pipefail
+          tofu fmt -check -recursive
+          tofu init -input=false -lockfile=readonly
+          tofu validate
+
+      - name: Create reviewable Grafana plan
+        id: plan
+        working-directory: grafana
+        env:
+          GRAFANA_AUTH: ${{ secrets.TERNFORGE_GRAFANA_AUTH }}
+          GRAFANA_CLOUD_ACCESS_POLICY_TOKEN: ${{ secrets.TERNFORGE_GRAFANA_CLOUD_ACCESS_POLICY_TOKEN }}
+          TF_VAR_github_data_source_secret: ${{ secrets.TERNFORGE_GRAFANA_GITHUB_SECURE_JSON }}
+          TF_VAR_alert_email: ${{ secrets.TERNFORGE_GRAFANA_ALERT_EMAIL }}
+        run: |
+          set -euo pipefail
+          tofu plan -input=false -out=platform-health.plan
+          tofu show -no-color platform-health.plan > platform-health-plan.txt
+          tofu show -json platform-health.plan > platform-health-plan.json
+          digest="$(jq -cS \
+            '[.resource_changes[]? | select(.change.actions != ["no-op"] or .change.importing != null)] | sort_by(.address)' \
+            platform-health-plan.json | sha256sum | cut -d' ' -f1)"
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Platform Health Grafana plan'
+            echo
+            printf 'Canonical resource changes digest: %s\n\n' "$digest"
+            echo '```text'
+            cat platform-health-plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f platform-health.plan platform-health-plan.txt platform-health-plan.json
+
+  apply:
+    name: platform health grafana / apply
+    if: github.ref == 'refs/heads/main'
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: observability
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version_file: grafana/.opentofu-version
+          tofu_wrapper: false
+
+      - name: Install pinned Scalr CLI
+        run: |
+          set -euo pipefail
+          base="https://github.com/Scalr/scalr-cli/releases/download/v${SCALR_CLI_VERSION}"
+          archive="scalr-cli_${SCALR_CLI_VERSION}_linux_amd64.zip"
+          curl -fsSLO "${base}/${archive}"
+          curl -fsSLO "${base}/scalr-cli_${SCALR_CLI_VERSION}_SHA256SUMS"
+          grep " ${archive}$" "scalr-cli_${SCALR_CLI_VERSION}_SHA256SUMS" | sha256sum --check --strict
+          unzip -q "$archive"
+          sudo install -m 0755 scalr /usr/local/bin/scalr
+          scalr -version
+          rm -f "$archive" "scalr-cli_${SCALR_CLI_VERSION}_SHA256SUMS" scalr
+
+      - name: Exchange GitHub OIDC for a 600-second Scalr credential
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=betabitplus")"
+          oidc="$(jq -er '.value' <<<"$response")"
+          echo "::add-mask::$oidc"
+          scalr -quiet assume-service-account \
+            -id-token="$oidc" \
+            -service-account-email="$SCALR_SA_EMAIL" \
+            -lifetime=600
+          test -s "$HOME/.terraform.d/credentials.tfrc.json"
+          jq -e --arg host "$SCALR_HOSTNAME" \
+            '.credentials[$host].token | type == "string" and length > 20' \
+            "$HOME/.terraform.d/credentials.tfrc.json" >/dev/null
+
+      - name: Read back state-only Scalr workspace
+        run: |
+          set -euo pipefail
+          scalr -format=json get-workspace -workspace="$SCALR_WORKSPACE_ID" > workspace.json
+          jq '{
+            execution_mode: ."execution-mode",
+            operations,
+            remote_backend: ."remote-backend",
+            iac_platform: ."iac-platform",
+            terraform_version: ."terraform-version",
+            vcs_repo: ."vcs-repo"
+          }' workspace.json
+          jq -e '
+            ."execution-mode" == "local" and
+            .operations == false and
+            ."remote-backend" == true and
+            ."iac-platform" == "opentofu" and
+            (."vcs-repo" == null or ."vcs-repo" == {})
+          ' workspace.json >/dev/null
+          scalr -format=json get-runs -filter-workspace="$SCALR_WORKSPACE_ID" > runs.json
+          jq -e 'length == 0' runs.json >/dev/null
+          scalr -format=json get-variables -filter-workspace="$SCALR_WORKSPACE_ID" > variables.json
+          jq -e 'length == 0' variables.json >/dev/null
+          scalr -format=json list-provider-configuration-links -workspace="$SCALR_WORKSPACE_ID" > provider-links.json
+          jq -e 'length == 0' provider-links.json >/dev/null
+          rm -f workspace.json runs.json variables.json provider-links.json
+
+      - name: Initialize Grafana remote state
+        working-directory: grafana
+        run: |
+          set -euo pipefail
+          tofu fmt -check -recursive
+          tofu init -input=false -lockfile=readonly
+          tofu validate
+
+      - name: Re-plan, verify reviewed digest, and apply
+        working-directory: grafana
+        env:
+          GRAFANA_AUTH: ${{ secrets.TERNFORGE_GRAFANA_AUTH }}
+          GRAFANA_CLOUD_ACCESS_POLICY_TOKEN: ${{ secrets.TERNFORGE_GRAFANA_CLOUD_ACCESS_POLICY_TOKEN }}
+          TF_VAR_github_data_source_secret: ${{ secrets.TERNFORGE_GRAFANA_GITHUB_SECURE_JSON }}
+          TF_VAR_alert_email: ${{ secrets.TERNFORGE_GRAFANA_ALERT_EMAIL }}
+          REVIEWED_PLAN_DIGEST: ${{ needs.plan.outputs.plan_digest }}
+        run: |
+          set -euo pipefail
+          tofu plan -input=false -out=platform-health.plan
+          tofu show -no-color platform-health.plan > platform-health-plan.txt
+          tofu show -json platform-health.plan > platform-health-plan.json
+          digest="$(jq -cS \
+            '[.resource_changes[]? | select(.change.actions != ["no-op"] or .change.importing != null)] | sort_by(.address)' \
+            platform-health-plan.json | sha256sum | cut -d' ' -f1)"
+          test "$digest" = "$REVIEWED_PLAN_DIGEST" || {
+            printf 'Plan changed after review: reviewed=%s current=%s\n' "$REVIEWED_PLAN_DIGEST" "$digest" >&2
+            exit 1
+          }
+          tofu apply -input=false platform-health.plan
+          rm -f platform-health.plan platform-health-plan.txt platform-health-plan.json
+
+      - name: Wait for GitHub data source readiness
+        working-directory: grafana
+        env:
+          GRAFANA_AUTH: ${{ secrets.TERNFORGE_GRAFANA_AUTH }}
+        run: |
+          set -euo pipefail
+          platform_health="$(tofu output -json platform_health)"
+          grafana_url="$(jq -er '.stack_url' <<<"$platform_health")"
+          datasource_uid="$(jq -er '.datasource_uid' <<<"$platform_health")"
+          for _ in $(seq 1 30); do
+            status="$(curl -sS -o health.json -w '%{http_code}' \
+              -H "Authorization: Bearer ${GRAFANA_AUTH}" \
+              "${grafana_url}/api/datasources/uid/${datasource_uid}/health" || true)"
+            if test "$status" = 200 && jq -e '.status == "OK"' health.json >/dev/null 2>&1; then
+              rm -f health.json
+              exit 0
+            fi
+            rm -f health.json
+            sleep 2
+          done
+          echo 'GitHub data source did not become healthy' >&2
+          exit 1
+
+      - name: Prove no drift and state-only execution
+        working-directory: grafana
+        env:
+          GRAFANA_AUTH: ${{ secrets.TERNFORGE_GRAFANA_AUTH }}
+          GRAFANA_CLOUD_ACCESS_POLICY_TOKEN: ${{ secrets.TERNFORGE_GRAFANA_CLOUD_ACCESS_POLICY_TOKEN }}
+          TF_VAR_github_data_source_secret: ${{ secrets.TERNFORGE_GRAFANA_GITHUB_SECURE_JSON }}
+          TF_VAR_alert_email: ${{ secrets.TERNFORGE_GRAFANA_ALERT_EMAIL }}
+        run: |
+          set -euo pipefail
+          set +e
+          tofu plan -detailed-exitcode -input=false > no-drift.txt
+          code=$?
+          set -e
+          cat no-drift.txt
+          rm -f no-drift.txt
+          test "$code" -eq 0
+          scalr -format=json get-runs -filter-workspace="$SCALR_WORKSPACE_ID" > runs.json
+          jq -e 'length == 0' runs.json >/dev/null
+          rm -f runs.json
