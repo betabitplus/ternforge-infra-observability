@@ -160,7 +160,7 @@
       "description": "Primary metrics-capacity signal. Platform-wide GitHub views do not add custom metric series.",
       "datasource": {"type": "prometheus", "uid": "grafanacloud-usage"},
       "gridPos": {"h": 4, "w": 4, "x": 12, "y": 27},
-      "targets": [{"refId": "A", "expr": "grafanacloud_instance_active_series", "instant": true}]
+      "targets": [{"refId": "A", "expr": "grafanacloud_instance_active_series or on() vector(0)", "instant": true}]
     },
     {
       "id": 14,
@@ -169,7 +169,7 @@
       "description": "Average metrics ingestion rate over 24 hours, converted from samples per second to data points per minute.",
       "datasource": {"type": "prometheus", "uid": "grafanacloud-usage"},
       "gridPos": {"h": 4, "w": 4, "x": 16, "y": 27},
-      "targets": [{"refId": "A", "expr": "60 * avg_over_time(grafanacloud_instance_samples_per_second[24h])", "instant": true}]
+      "targets": [{"refId": "A", "expr": "60 * avg_over_time(grafanacloud_instance_samples_per_second[24h]) or on() vector(0)", "instant": true}]
     },
     {
       "id": 15,

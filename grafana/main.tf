@@ -56,7 +56,7 @@ locals {
     }
     grafana_capacity = {
       name           = "Ternforge Grafana metric capacity warning"
-      expr           = "100 * grafanacloud_instance_active_series / ${var.metric_series_allowance}"
+      expr           = "100 * (grafanacloud_instance_active_series or on() vector(0)) / ${var.metric_series_allowance}"
       threshold      = 80
       datasource_uid = "grafanacloud-usage"
       summary        = "Grafana Cloud active series reached 80 percent of the reviewed metric-series allowance."
