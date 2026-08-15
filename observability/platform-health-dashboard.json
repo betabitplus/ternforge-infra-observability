@@ -52,7 +52,7 @@
       "description": "Worst actionable state of update delivery only. Other platform signals are drill-down views, not a synthetic score.",
       "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
       "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
-      "targets": [{"refId": "A", "expr": "max((1 - last_over_time(ternforge_update_run_success{ternforge_trigger=\"release\"}[14d])) or (last_over_time(ternforge_fleet_expected_repositories{ternforge_trigger=\"release\"}[14d]) != bool last_over_time(ternforge_fleet_observed_repositories{ternforge_trigger=\"release\"}[14d])) or (1 - last_over_time(ternforge_fleet_token_scope_ok{ternforge_trigger=\"release\"}[14d])) or ((time() - last_over_time(ternforge_update_last_success_unixtime[48h])) > bool 129600) or (last_over_time(ternforge_update_processing_duration_seconds{ternforge_trigger=\"release\"}[14d]) > bool 2700))", "instant": true}],
+      "targets": [{"refId": "A", "expr": "max((1 - last_over_time(ternforge_update_run_success{ternforge_trigger=\"release\"}[14d])) or (last_over_time(ternforge_fleet_expected_repositories{ternforge_trigger=\"\"}[48h]) != bool last_over_time(ternforge_fleet_observed_repositories{ternforge_trigger=\"\"}[48h])) or (1 - last_over_time(ternforge_fleet_token_scope_ok{ternforge_trigger=\"\"}[48h])) or ((time() - last_over_time(ternforge_update_last_success_unixtime[48h])) > bool 129600) or (last_over_time(ternforge_update_processing_duration_seconds{ternforge_trigger=\"release\"}[14d]) > bool 2700))", "instant": true}],
       "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "Healthy"}, "1": {"text": "Critical"}}}]}, "overrides": []}
     },
     {
@@ -89,9 +89,9 @@
       "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
       "gridPos": {"h": 5, "w": 8, "x": 0, "y": 5},
       "targets": [
-        {"refId": "A", "expr": "last_over_time(ternforge_fleet_expected_repositories{ternforge_trigger=\"release\"}[14d])", "instant": true, "legendFormat": "expected"},
-        {"refId": "B", "expr": "last_over_time(ternforge_fleet_observed_repositories{ternforge_trigger=\"release\"}[14d])", "instant": true, "legendFormat": "observed"},
-        {"refId": "C", "expr": "last_over_time(ternforge_fleet_token_scope_ok{ternforge_trigger=\"release\"}[14d])", "instant": true, "legendFormat": "token scope"}
+        {"refId": "A", "expr": "last_over_time(ternforge_fleet_expected_repositories{ternforge_trigger=\"\"}[48h])", "instant": true, "legendFormat": "expected"},
+        {"refId": "B", "expr": "last_over_time(ternforge_fleet_observed_repositories{ternforge_trigger=\"\"}[48h])", "instant": true, "legendFormat": "observed"},
+        {"refId": "C", "expr": "last_over_time(ternforge_fleet_token_scope_ok{ternforge_trigger=\"\"}[48h])", "instant": true, "legendFormat": "token scope"}
       ]
     },
     {

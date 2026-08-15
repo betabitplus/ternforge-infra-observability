@@ -28,7 +28,8 @@ Observability is intentionally ingestion-light:
   polling every workflow in every repository;
 - the dashboard refreshes every five minutes and alert rules evaluate every five
   minutes;
-- active OTLP series and actual DPM remain visible on the dashboard.
+- fleet/token coverage reads the latest trigger-independent full-fleet state;
+- active series, 24h average DPM, and included DPM per series remain visible on the dashboard.
 
 The GitHub App selected-repository membership is managed from the same authoritative
 fleet inventory as the rest of Ternforge, so observability does not maintain a
