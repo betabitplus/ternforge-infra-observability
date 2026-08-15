@@ -101,7 +101,7 @@
       "description": "Review backlog only; age is operational context, not an alert by itself.",
       "datasource": {"type": "grafana-github-datasource", "uid": "ternforge-github"},
       "gridPos": {"h": 8, "w": 8, "x": 8, "y": 5},
-      "targets": [{"refId": "A", "queryType": "Pull_Requests", "owner": "betabitplus", "repository": "", "options": {"query": "is:open author:app/renovate", "timeField": 4}}]
+      "targets": [{"refId": "A", "queryType": "Pull_Requests", "owner": "betabitplus", "repository": "", "options": {"query": "is:open author:app/ternforge-renovate", "timeField": 4}}]
     },
     {
       "id": 7,
