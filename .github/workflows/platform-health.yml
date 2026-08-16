@@ -14,6 +14,7 @@ concurrency:
 env:
   SCALR_HOSTNAME: betabitplus-ternforge.scalr.io
   SCALR_SA_EMAIL: ternforge-fleet-health-github@betabitplus-ternforge.scalr.io
+  SCALR_INERT_RUN_STATUSES: discarded,planned_and_finished,applied,post_apply_finished,errored,canceled
   # renovate: datasource=github-releases depName=Scalr/scalr-cli versioning=semver extractVersion=^v(?<version>.*)$
   SCALR_CLI_VERSION: 0.18.0
   SCALR_WORKSPACE_ID: ws-v0pc9tb78frfm28ls
@@ -86,7 +87,9 @@ jobs:
             ."iac-platform" == "opentofu" and
             (."vcs-repo" == null or ."vcs-repo" == {})
           ' workspace.json >/dev/null
-          scalr -format=json get-runs -filter-workspace="$SCALR_WORKSPACE_ID" > runs.json
+          scalr -format=json get-runs \
+            -filter-workspace="$SCALR_WORKSPACE_ID" \
+            -filter-status="notin:${SCALR_INERT_RUN_STATUSES}" > runs.json
           jq -e 'length == 0' runs.json >/dev/null
           scalr -format=json get-variables -filter-workspace="$SCALR_WORKSPACE_ID" > variables.json
           jq -e 'length == 0' variables.json >/dev/null
@@ -192,7 +195,9 @@ jobs:
             ."iac-platform" == "opentofu" and
             (."vcs-repo" == null or ."vcs-repo" == {})
           ' workspace.json >/dev/null
-          scalr -format=json get-runs -filter-workspace="$SCALR_WORKSPACE_ID" > runs.json
+          scalr -format=json get-runs \
+            -filter-workspace="$SCALR_WORKSPACE_ID" \
+            -filter-status="notin:${SCALR_INERT_RUN_STATUSES}" > runs.json
           jq -e 'length == 0' runs.json >/dev/null
           scalr -format=json get-variables -filter-workspace="$SCALR_WORKSPACE_ID" > variables.json
           jq -e 'length == 0' variables.json >/dev/null
@@ -270,6 +275,8 @@ jobs:
           cat no-drift.txt
           rm -f no-drift.txt
           test "$code" -eq 0
-          scalr -format=json get-runs -filter-workspace="$SCALR_WORKSPACE_ID" > runs.json
+          scalr -format=json get-runs \
+            -filter-workspace="$SCALR_WORKSPACE_ID" \
+            -filter-status="notin:${SCALR_INERT_RUN_STATUSES}" > runs.json
           jq -e 'length == 0' runs.json >/dev/null
           rm -f runs.json
