@@ -44,5 +44,5 @@ them would create migration work without changing the supported contract.
 
 Run the manual **platform health grafana** workflow from `main`. It uses the
 protected `observability` environment, a short-lived GitHub OIDC exchange to the
-existing Grafana state-only Scalr workspace, a reviewable plan/apply boundary,
+existing Grafana state-only Scalr workspace with `terraform-version=auto`, a reviewable plan/apply boundary,
 GitHub data-source health readback, and a final no-drift plan.

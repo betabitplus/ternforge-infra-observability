@@ -85,6 +85,7 @@ jobs:
             .operations == false and
             ."remote-backend" == true and
             ."iac-platform" == "opentofu" and
+            ."terraform-version" == "auto" and
             (."vcs-repo" == null or ."vcs-repo" == {})
           ' workspace.json >/dev/null
           scalr -format=json get-runs \
@@ -193,6 +194,7 @@ jobs:
             .operations == false and
             ."remote-backend" == true and
             ."iac-platform" == "opentofu" and
+            ."terraform-version" == "auto" and
             (."vcs-repo" == null or ."vcs-repo" == {})
           ' workspace.json >/dev/null
           scalr -format=json get-runs \
