@@ -18,23 +18,26 @@ locals {
       summary   = "The latest release-triggered full-fleet reconciliation failed."
     }
     recovery_stale = {
-      name      = "Ternforge full-fleet recovery is stale"
-      expr      = "time() - last_over_time(ternforge_update_last_success_unixtime[48h])"
-      threshold = 129600
-      no_data   = "Alerting"
-      summary   = "No successful full-fleet reconciliation has been observed within 36 hours."
+      name               = "Ternforge full-fleet recovery is stale"
+      expr               = "time() - last_over_time(ternforge_update_last_success_unixtime[48h])"
+      threshold          = 129600
+      no_data            = "Alerting"
+      human_notification = true
+      summary            = "No successful full-fleet reconciliation has been observed within 36 hours."
     }
     coverage_mismatch = {
-      name      = "Ternforge fleet coverage mismatch"
-      expr      = "abs(last_over_time(ternforge_fleet_expected_repositories{ternforge_trigger=\"\"}[48h]) - last_over_time(ternforge_fleet_observed_repositories{ternforge_trigger=\"\"}[48h]))"
-      threshold = 0.5
-      summary   = "Expected and observed managed repository counts differ."
+      name               = "Ternforge fleet coverage mismatch"
+      expr               = "abs(last_over_time(ternforge_fleet_expected_repositories{ternforge_trigger=\"\"}[48h]) - last_over_time(ternforge_fleet_observed_repositories{ternforge_trigger=\"\"}[48h]))"
+      threshold          = 0.5
+      human_notification = true
+      summary            = "Expected and observed managed repository counts differ."
     }
     token_scope_mismatch = {
-      name      = "Ternforge Renovate token scope mismatch"
-      expr      = "1 - last_over_time(ternforge_fleet_token_scope_ok{ternforge_trigger=\"\"}[48h])"
-      threshold = 0.5
-      summary   = "The Renovate installation token repository set does not match the managed fleet."
+      name               = "Ternforge Renovate token scope mismatch"
+      expr               = "1 - last_over_time(ternforge_fleet_token_scope_ok{ternforge_trigger=\"\"}[48h])"
+      threshold          = 0.5
+      human_notification = true
+      summary            = "The Renovate installation token repository set does not match the managed fleet."
     }
     processing_slow = {
       name      = "Ternforge release processing exceeds ten minutes"
@@ -49,10 +52,11 @@ locals {
       summary   = "A reconciliation reached 45 minutes and is approaching the one-hour installation-token lifetime."
     }
     renovate_configuration_warning = {
-      name      = "Ternforge Renovate configuration warning"
-      expr      = "last_over_time(ternforge_renovate_configuration_warnings[36h])"
-      threshold = 0.5
-      summary   = "At least one managed repository has an open Renovate configuration-warning issue."
+      name               = "Ternforge Renovate configuration warning"
+      expr               = "last_over_time(ternforge_renovate_configuration_warnings[36h])"
+      threshold          = 0.5
+      human_notification = true
+      summary            = "At least one managed repository has an open Renovate configuration-warning issue."
     }
     grafana_capacity = {
       name           = "Ternforge Grafana metric capacity warning"
@@ -119,8 +123,8 @@ resource "grafana_contact_point" "fleet_health" {
   email {
     addresses               = [var.alert_email]
     single_email            = true
-    disable_resolve_message = false
-    subject                 = "{{ template \"default.title\" . }}"
+    disable_resolve_message = true
+    subject                 = "[Ternforge] Human action required"
     message                 = "{{ template \"default.message\" . }}"
   }
 }
@@ -148,8 +152,9 @@ resource "grafana_rule_group" "fleet_health" {
       }
 
       labels = {
-        service = "ternforge"
-        scope   = "platform-health"
+        service            = "ternforge"
+        scope              = "platform-health"
+        human_notification = try(rule.value.human_notification, false) ? "true" : "false"
       }
 
       data {
@@ -208,8 +213,14 @@ resource "grafana_rule_group" "fleet_health" {
         })
       }
 
-      notification_settings {
-        contact_point = grafana_contact_point.fleet_health.name
+      dynamic "notification_settings" {
+        for_each = try(rule.value.human_notification, false) ? [true] : []
+        content {
+          contact_point   = grafana_contact_point.fleet_health.name
+          group_wait      = "10m"
+          group_interval  = "1h"
+          repeat_interval = "5d"
+        }
       }
     }
   }

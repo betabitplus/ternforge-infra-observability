@@ -7,7 +7,7 @@ This repository owns only the observability presentation and alerting plane:
 - Grafana Cloud/OpenTofu configuration and its separate state-only Scalr workspace;
 - the `Ternforge Platform Health` dashboard;
 - the read-only GitHub data source;
-- actionable platform-health alerts and their contact point.
+- platform-health alert rules and the quiet human-action email contact point.
 
 It does **not** own repository desired state, CI/release execution, Renovate policy,
 update reconciliation, or a second fleet registry. Those remain owned by
@@ -39,6 +39,18 @@ The existing Grafana folder/dashboard UID and Scalr workspace name keep their
 historical `ternforge-fleet-health` identity during this ownership split. They are
 stable external/state identifiers, not current repository ownership labels; renaming
 them would create migration work without changing the supported contract.
+
+## Human notification boundary
+
+All platform-health rules continue to evaluate and remain visible in Grafana. Email is
+reserved for states that require owner intervention: stale full-fleet recovery, fleet
+coverage mismatch, Renovate token-scope mismatch, or an open Renovate configuration
+warning. A single failed reconciliation, slow processing, token-boundary pressure, and
+Grafana capacity remain dashboard/API signals for investigation and future automation.
+
+Human email waits ten minutes before first delivery, repeats at most every five days
+while the same condition remains firing, and does not send a separate resolved message.
+There are no time-of-day or weekday mute rules.
 
 ## Apply
 
