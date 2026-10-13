@@ -16,7 +16,7 @@ env:
   SCALR_SA_EMAIL: ternforge-fleet-health-github@betabitplus-ternforge.scalr.io
   SCALR_INERT_RUN_STATUSES: discarded,planned_and_finished,applied,post_apply_finished,errored,canceled
   # renovate: datasource=github-releases depName=Scalr/scalr-cli versioning=semver extractVersion=^v(?<version>.*)$
-  SCALR_CLI_VERSION: 0.18.0
+  SCALR_CLI_VERSION: 0.18.1
   SCALR_WORKSPACE_ID: ws-v0pc9tb78frfm28ls
   TF_VAR_grafana_stack_slug: ${{ vars.TERNFORGE_GRAFANA_STACK_SLUG }}
   TF_VAR_github_app_id: ${{ vars.TERNFORGE_GRAFANA_GITHUB_APP_ID }}
