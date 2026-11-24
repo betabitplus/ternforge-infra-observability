@@ -1,5 +1,5 @@
 terraform {
-  required_version = "= 1.12.5"
+  required_version = "= 1.13.10"
 
   required_providers {
     grafana = {
